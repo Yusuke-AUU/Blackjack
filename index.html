@@ -563,6 +563,9 @@ async function deal(){
   $('split-row').style.display='none';
   $('player-hand-area').style.display='flex';
   disAll();setS('');
+  // チップをここで引く（結果に応じてendHandで返す/上乗せする）
+  G.chips-=G.bet;
+  $('chips-disp').textContent=G.chips;
   G.phase='player';
   setBadge('DEALING...');
 
@@ -664,9 +667,11 @@ async function doStand(){
 async function doDouble(){
   if(G.phase!=='player')return;
   disAll();
-  const extra=Math.min(G.bet, G.chips-G.bet);
-  G.bet+=extra;G.doubled=true;
+  const extra=Math.min(G.bet, G.chips); // 手持ちチップから追加
+  G.chips-=extra; // 追加分をここで引く
+  G.bet+=extra; G.doubled=true;
   $('bet-disp').textContent=G.bet;
+  $('chips-disp').textContent=G.chips;
   const c=G.dk.pop();G.ph.push(c);
   renderAll(false);
   setGuide(`💰 ダブルダウン！ベット合計${G.bet}。1枚引いて終了。`,'');
@@ -794,84 +799,90 @@ function resolveNormal(){
 }
 
 function resolveSplit(){
+  // deal()時にG.bet（スプリット後の合計=片手×2）はすでにchipsから引かれている
   const dv=handValue(G.dh);
-  let net=0;
   const betEach=G.bet/2;
+  let returned=0;
   for(let i=0;i<2;i++){
     const pv=handValue(G.splitHands[i]);
-    if(pv>21){net-=betEach;}
-    else if(dv>21){net+=betEach;}
-    else if(pv>dv){net+=betEach;}
-    else if(dv>pv){net-=betEach;}
-    // push: net 0
+    if(pv<=21){
+      if(dv>21||pv>dv) returned+=betEach*2; // 勝ち: 掛金×2返却
+      else if(pv===dv)  returned+=betEach;   // push: 掛金返却
+      // 負け: 0
+    }
   }
-  G.phase='result';
-  const totalWin=G.bet+net; // G.bet/2 * each result
-  if(net>0){
-    G.chips+=G.bet+net;
-    G.lastWin=net;
-    setS(`✨ スプリット結果: +${net} 獲得！`,'win');
-    setGuide(`🏆 スプリット勝利！合計 +${net} チップ獲得。`,`あなた: ${handValue(G.splitHands[0])} / ${handValue(G.splitHands[1])}　ディーラー: ${dv}`);
+  const profit=returned-G.bet;
+  G.chips+=returned;
+  const s0=handValue(G.splitHands[0]); const s1=handValue(G.splitHands[1]);
+  if(profit>0){
+    setS(`✨ スプリット勝利！ +${profit} チップ獲得！`,'win');
     setBadge('WIN! 🏆');
-    $('last-win').textContent='🪙 +'+net;$('last-win').className='iv win-val';
-  }else if(net===0){
-    G.chips+=G.bet;
-    setS('🤝 スプリット：引き分け（チップ返却）','tie');
+    setGuide(`🏆 スプリット勝利 +${profit}！　${s0} / ${s1} vs ディーラー${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
+    $('last-win').textContent='🪙 +'+profit; $('last-win').className='iv win-val';
+  }else if(profit===0){
+    setS('🤝 スプリット引き分け。チップ返却。','tie');
     setBadge('PUSH 🤝');
-    $('last-win').textContent='—';$('last-win').className='iv';
-    G.lastWin=0;
+    setGuide(`🤝 スプリット引き分け。　${s0} / ${s1} vs ディーラー${dv}`,'チップを賭けてDEALで次へ！');
+    $('last-win').textContent='—'; $('last-win').className='iv';
   }else{
-    G.lastWin=net;
-    setS(`💀 スプリット敗北: ${net} チップ失いました。`,'lose');
-    setGuide(`💀 スプリット敗北。`,`あなた: ${handValue(G.splitHands[0])} / ${handValue(G.splitHands[1])}　ディーラー: ${dv}`);
+    setS(`💀 スプリット敗北。${-profit} チップ失いました。`,'lose');
     setBadge('LOSE 💀');
-    $('last-win').textContent=net;$('last-win').className='iv';
+    setGuide(`💀 スプリット敗北。　${s0} / ${s1} vs ディーラー${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
+    $('last-win').textContent='—'; $('last-win').className='iv';
   }
+  G.lastWin=profit;
+  G.bet=0;
   save();
   $('chips-disp').textContent=G.chips;
+  $('bet-disp').textContent=0;
+  G.phase='idle';
   setActions(false,false,false,false,true,false);
   if(G.chips<=0){setGuide('💀 チップ切れ！↺でリセット。','');$('bdeal').disabled=true;}
-  G.bet=0;$('bet-disp').textContent=0;
 }
 
 function endHand(winner){
-  G.phase='result';
-  const pv=handValue(G.ph);const dv=handValue(G.dh);
-  let win=0;
+  // deal()時点でG.chips -= G.bet済み。ここでは返却分だけ加算する。
+  // 勝ち: bet×2返却（bet+利益bet）, BJ: bet+floor(bet*1.5)返却, push: bet返却, 負け: 0
+  const pv=handValue(G.ph); const dv=handValue(G.dh);
+  let profit=0;
   if(winner==='player'){
-    win=G.bet;G.chips+=G.bet*2;
-    setS(`🏆 勝ち！ +${G.bet} チップ獲得！`,'win');
+    profit=G.bet; G.chips+=G.bet*2;
+    setS(`🏆 勝ち！ +${profit} チップ獲得！`,'win');
     setBadge('WIN! 🏆');
-    setGuide(`🏆 勝ちました！　あなた: ${pv}　ディーラー: ${dv<=21?dv:'BUST'}`,`NEW ROUNDで次へ！`);
+    setGuide(`🏆 勝ちました！　あなた: ${pv}　ディーラー: ${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
     $('player-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='🪙 +'+G.bet;$('last-win').className='iv win-val';
+    $('last-win').textContent='🪙 +'+profit; $('last-win').className='iv win-val';
   }else if(winner==='bj'){
-    win=Math.floor(G.bet*1.5);G.chips+=G.bet+win;
-    setS(`⭐ ブラックジャック！ +${win} チップ獲得！`,'win');
+    profit=Math.floor(G.bet*1.5); G.chips+=G.bet+profit;
+    setS(`⭐ ブラックジャック！ +${profit} チップ獲得！`,'win');
     setBadge('BLACKJACK! ⭐');
-    setGuide('⭐ ブラックジャック！1.5倍の特別配当です！','NEW ROUNDで次へ！');
+    setGuide('⭐ ブラックジャック！1.5倍の特別配当！','チップを賭けてDEALで次へ！');
     $('player-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='⭐ +'+win;$('last-win').className='iv win-val';
+    $('last-win').textContent='⭐ +'+profit; $('last-win').className='iv win-val';
   }else if(winner==='push'){
-    G.chips+=G.bet;
+    profit=0; G.chips+=G.bet;
     setS('🤝 引き分け（プッシュ）。チップ返却。','tie');
     setBadge('PUSH 🤝');
-    setGuide(`🤝 プッシュ！引き分けです。　あなた: ${pv}　ディーラー: ${dv}`,'NEW ROUNDで次へ！');
-    $('last-win').textContent='—';$('last-win').className='iv';win=0;
+    setGuide(`🤝 プッシュ。あなた: ${pv}　ディーラー: ${dv}`,'チップを賭けてDEALで次へ！');
+    $('last-win').textContent='—'; $('last-win').className='iv';
   }else{
+    // 負け: チップはすでに引かれているので何も返さない
+    profit=-G.bet;
     setS(`💀 負け。${G.bet} チップ失いました。`,'lose');
     setBadge('LOSE 💀');
-    const reason=pv>21?'バースト':dv>21?`ディーラーがバースト！でも…`:`ディーラー${dv} > あなた${pv}`;
-    setGuide(`💀 負け。${reason}`,'NEW ROUNDで次へ！');
+    const reason=pv>21?'バースト':dv>21?'先にバースト':`ディーラー${dv} > あなた${pv}`;
+    setGuide(`💀 負け。${reason}`,'チップを賭けてDEALで次へ！');
     $('dealer-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='—';$('last-win').className='iv';win=-G.bet;
+    $('last-win').textContent='—'; $('last-win').className='iv';
   }
-  G.lastWin=win;
+  G.lastWin=profit;
+  G.bet=0;
   save();
   $('chips-disp').textContent=G.chips;
+  $('bet-disp').textContent=0;
+  G.phase='idle';
   setActions(false,false,false,false,true,false);
   if(G.chips<=0){setGuide('💀 チップ切れ！↺ボタンでリセットできます。','');$('bdeal').disabled=true;}
-  G.bet=0;$('bet-disp').textContent=0;
 }
 
 // ── Reset ──
