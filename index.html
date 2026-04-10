@@ -402,9 +402,12 @@ html,body { width:100%; height:100%; overflow:hidden;
 </div>
 
 <script>
+'use strict';
 const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const $=id=>document.getElementById(id);
+
+// ── Help ──
 
 function openHelp(){$('help-modal').classList.add('open');}
 function closeHelp(){$('help-modal').classList.remove('open');}
@@ -413,111 +416,95 @@ $('help-modal').onclick=e=>{if(e.target===$('help-modal'))closeHelp();};
 // ── Card utils ──
 function mkDeck(){return SUITS.flatMap(s=>RANKS.map(r=>({r,s})));}
 function shuf(d){for(let i=d.length-1;i>0;i--){const j=0|Math.random()*(i+1);[d[i],d[j]]=[d[j],d[i]];}return d;}
-
-function cardHardVal(r){
-  if(r==='A')return 1;
-  if(['10','J','Q','K'].includes(r))return 10;
-  return parseInt(r);
+function cardHV(r){if(r==='A')return 1;if(['10','J','Q','K'].includes(r))return 10;return parseInt(r);}
+function hv(cards){
+  let t=0,a=0;
+  for(const c of cards){t+=cardHV(c.r);if(c.r==='A')a++;}
+  while(a>0&&t+10<=21){t+=10;a--;}
+  return t;
 }
-function handValue(cards){
-  let total=0, aces=0;
-  for(const c of cards){
-    const v=cardHardVal(c.r);
-    total+=v;
-    if(c.r==='A')aces++;
-  }
-  while(aces>0 && total+10<=21){total+=10;aces--;}
-  return total;
-}
-function isSoft(cards){
-  // Has usable ace as 11
-  let total=0, aces=0;
-  for(const c of cards){total+=cardHardVal(c.r);if(c.r==='A')aces++;}
-  return aces>0 && total+10<=21;
-}
-function isBlackjack(cards){
-  return cards.length===2 && handValue(cards)===21;
-}
-
-function cardEl(c, fd){
+function isSoft(cards){let t=0,a=0;for(const c of cards){t+=cardHV(c.r);if(c.r==='A')a++;}return a>0&&t+10<=21;}
+function isBJ(cards){return cards.length===2&&hv(cards)===21;}
+function cardEl(c,fd){
   const el=document.createElement('div');
   el.className='card '+(fd?'fd':'fu')+' deal-in';
   if(!fd){
-    const red=c.s==='♥'||c.s==='♦';
+    const red=c.s==='\u2665'||c.s==='\u2666';
     el.classList.add(red?'red':'blk');
     el.innerHTML=`<div class="c-tl">${c.r}<br>${c.s}</div><div class="c-rank">${c.r}</div><div class="c-suit">${c.s}</div><div class="c-br">${c.r}<br>${c.s}</div>`;
   }
   return el;
 }
 
-// ── State ──
+// ── Persistence ──
 function loadSave(){
-  try{const s=JSON.parse(localStorage.getItem('rblackjack'));if(s&&s.chips>0)return{chips:s.chips};}catch(e){}
-  return{chips:1000};
+  try{const s=JSON.parse(localStorage.getItem('rblackjack'));if(s&&s.chips>0)return s.chips;}catch(e){}
+  return 1000;
 }
 function save(){try{localStorage.setItem('rblackjack',JSON.stringify({chips:G.chips}));}catch(e){}}
 
-const saved=loadSave();
-let G={
-  dk:[],
-  ph:[],dh:[],          // player hand, dealer hand
-  splitHands:[[],[]],   // split hand 0 and 1
-  splitActive:false,
-  splitIdx:0,           // which split hand is active
-  chips:saved.chips,
-  bet:0,
-  sideBet:0,            // insurance
-  phase:'idle',         // idle, player, dealer, result
-  doubled:false,
-  insured:false,
-  lastWin:null,
+// ── State ──
+const G={
+  dk:[],ph:[],dh:[],sp:[[],[]],
+  chips:loadSave(),
+  bet:0,phase:'idle',
+  splitOn:false,spIdx:0,_ins:0,
 };
 
+// ── UI helpers ──
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function setS(m,c=''){$('status-msg').textContent=m;$('status-msg').className=c;}
 function setBadge(t){$('badge').textContent=t;}
-function setGuide(sit,hint){$('guide-situation').textContent=sit;$('guide-hint').textContent=hint;}
+function setGuide(a,b){$('guide-situation').textContent=a;$('guide-hint').textContent=b;}
+function setBtn(id,on){$(id).disabled=!on;}
+function showActions(hit,stand,dbl,spl,deal,ins){
+  setBtn('bhit',hit);setBtn('bstand',stand);setBtn('bdouble',dbl);
+  setBtn('bsplit',spl);setBtn('bdeal',deal);
+  $('btn-row2').style.display=ins?'flex':'none';
+}
+function lockAll(){showActions(false,false,false,false,false,false);}
 
 // ── Render ──
-function renderCardRow(containerId, cards, hideFirst){
-  const cont=$(containerId);cont.innerHTML='';
-  cards.forEach((c,i)=>cont.appendChild(cardEl(c, hideFirst && i===0)));
+function renderHand(contId,cards,hideFirst){
+  const c=$(contId);c.innerHTML='';
+  cards.forEach((card,i)=>c.appendChild(cardEl(card,hideFirst&&i===0)));
 }
-
-function scoreClass(v, hand){
+function scoreClass(v,hand){
   if(v>21)return 'bust';
-  if(isBlackjack(hand))return 'bj';
+  if(isBJ(hand))return 'bj';
   if(v>=18)return 'good';
   return '';
 }
-
-function renderScores(revealDealer){
-  const pv=handValue(G.ph); const dv=handValue(G.dh);
-  const ps=$('player-score'); const ds=$('dealer-score');
-  if(G.ph.length===0){ps.textContent='—';ps.className='hand-score';}
-  else{ps.textContent=pv+(isSoft(G.ph)&&pv<=21?' ✦':'');ps.className='hand-score '+scoreClass(pv,G.ph);}
-  if(G.dh.length===0){ds.textContent='—';ds.className='hand-score';}
-  else if(!revealDealer && G.phase!=='dealer'&&G.phase!=='result'){
-    ds.textContent=cardHardVal(G.dh[1].r);ds.className='hand-score';
-  }else{ds.textContent=dv;ds.className='hand-score '+scoreClass(dv,G.dh);}
-}
-
-function renderSplit(){
-  for(let i=0;i<2;i++){
-    const cont=$('split-cards-'+i);cont.innerHTML='';
-    G.splitHands[i].forEach(c=>cont.appendChild(cardEl(c,false)));
-    const v=handValue(G.splitHands[i]);
-    const sc=$('split-score-'+i);
-    sc.textContent=v;
-    sc.style.color=v>21?'#ff6666':v===21?'#7fff7f':'';
-    $('split-hand-'+i).classList.toggle('active-split', i===G.splitIdx);
+function renderScore(elId,cards,hide){
+  const el=$(elId);
+  if(!cards.length){el.textContent='\u2014';el.className='hand-score';return;}
+  if(hide){
+    if(cards.length<2){el.textContent='?';el.className='hand-score';return;}
+    el.textContent=cardHV(cards[1].r);el.className='hand-score';
+  }else{
+    const v=hv(cards);
+    el.textContent=v+(isSoft(cards)&&v<=21?' \u2746':'');
+    el.className='hand-score '+scoreClass(v,cards);
   }
 }
-
-function renderAll(revealDealer){
-  renderCardRow('dealer-cards', G.dh, !revealDealer && G.phase!=='dealer'&&G.phase!=='result');
-  if(!G.splitActive)renderCardRow('player-cards', G.ph, false);
-  renderScores(revealDealer);
-  if(G.splitActive)renderSplit();
+function render(revealDealer){
+  const hideDealer=!revealDealer&&(G.phase==='dealing'||G.phase==='player');
+  renderHand('dealer-cards',G.dh,hideDealer);
+  renderScore('dealer-score',G.dh,hideDealer);
+  if(!G.splitOn){
+    renderHand('player-cards',G.ph,false);
+    renderScore('player-score',G.ph,false);
+  }else{
+    for(let i=0;i<2;i++){
+      const sc=$('split-cards-'+i);sc.innerHTML='';
+      G.sp[i].forEach(c=>sc.appendChild(cardEl(c,false)));
+      const v=hv(G.sp[i]);
+      const ss=$('split-score-'+i);
+      ss.textContent=v||'';
+      ss.style.color=v>21?'#ff6666':v===21?'#7fff7f':'';
+      $('split-hand-'+i).classList.toggle('active-split',i===G.spIdx);
+    }
+  }
   $('chips-disp').textContent=G.chips;
   $('bet-disp').textContent=G.bet;
 }
@@ -525,388 +512,266 @@ function renderAll(revealDealer){
 // ── Bet ──
 function addBet(amt){
   if(G.phase!=='idle')return;
-  const add=Math.min(amt, G.chips-G.bet);
-  if(add<=0){setGuide('⚠️ チップが足りません！','持ちチップ以上は賭けられません');return;}
-  G.bet+=add;
+  const room=G.chips-G.bet;
+  if(room<=0){setGuide('\u26a0\ufe0f \u30c1\u30c3\u30d7\u304c\u8db3\u308a\u307e\u305b\u3093\uff01','\u6301\u3061\u30c1\u30c3\u30d7\u4ee5\u4e0a\u306f\u8ced\u3051\u3089\u308c\u307e\u305b\u3093');return;}
+  G.bet+=Math.min(amt,room);
   $('bet-disp').textContent=G.bet;
-  setGuide(`🪙 ${G.bet} チップを賭け中`,'さらにチップを追加するかDEALを押してください');
+  setGuide('\uD83E\uDE99 '+G.bet+' \u30c1\u30c3\u30d7\u3092\u8ced\u3051\u4e2d','\u3055\u3089\u306b\u8ffd\u52a0\u3059\u308b\u304bDEAL\u3092\u62bc\u3057\u3066\u304f\u3060\u3055\u3044');
 }
 function clearBet(){
   if(G.phase!=='idle')return;
   G.bet=0;$('bet-disp').textContent=0;
-  setGuide('賭けをクリアしました。','チップを選んでベットしましょう');
+  setGuide('\u8ced\u3051\u3092\u30af\u30ea\u30a2\u3057\u307e\u3057\u305f\u3002','\u30c1\u30c3\u30d7\u3092\u9078\u3093\u3067\u30d9\u30c3\u30c8\u3057\u307e\u3057\u3087\u3046');
 }
-
-// ── Action buttons control ──
-function setActions(hit,stand,dbl,spl,deal,ins){
-  $('bhit').disabled=!hit;$('bstand').disabled=!stand;
-  $('bdouble').disabled=!dbl;$('bsplit').disabled=!spl;
-  $('bdeal').disabled=!deal;
-  $('btn-row2').style.display=ins?'flex':'none';
-}
-function disAll(){setActions(false,false,false,false,false,false);}
 
 // ── Deal ──
-async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
-
 async function deal(){
   if(G.phase!=='idle')return;
-  if(G.bet===0){setGuide('⚠️ 先にチップを賭けてください！','チップボタンを押してベット');return;}
-  if(G.chips<G.bet){G.bet=G.chips;} // safety
+  if(!G.bet){setGuide('\u26a0\ufe0f \u5148\u306b\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066\u304f\u3060\u3055\u3044\uff01','\u30c1\u30c3\u30d7\u30dc\u30bf\u30f3\u3092\u62bc\u3057\u3066\u30d9\u30c3\u30c8');return;}
 
-  // Reset
-  G.ph=[];G.dh=[];G.splitHands=[[],[]];G.splitActive=false;G.splitIdx=0;
-  G.doubled=false;G.insured=false;G.sideBet=0;
   $('dealer-cards').innerHTML='';$('player-cards').innerHTML='';
-  $('dealer-cards').parentElement.classList.remove('win-glow');
-  $('player-cards').parentElement.classList.remove('win-glow');
+  const dArea=$('dealer-cards').closest('.hand-area');
+  const pArea=$('player-cards').closest('.hand-area');
+  if(dArea)dArea.classList.remove('win-glow');
+  if(pArea)pArea.classList.remove('win-glow');
   $('split-row').style.display='none';
   $('player-hand-area').style.display='flex';
-  disAll();setS('');
-  // チップをここで引く（結果に応じてendHandで返す/上乗せする）
+  $('dealer-score').textContent='\u2014';$('player-score').textContent='\u2014';
+  setS('');
+
+  G.ph=[];G.dh=[];G.sp=[[],[]];G.splitOn=false;G.spIdx=0;G._ins=0;
   G.chips-=G.bet;
   $('chips-disp').textContent=G.chips;
+  G.phase='dealing';lockAll();setBadge('DEALING...');
+
+  if(G.dk.length<52){G.dk=[];for(let i=0;i<6;i++)G.dk.push(...mkDeck());shuf(G.dk);}
+
+  const seq=[G.ph,G.dh,G.ph,G.dh];
+  for(const h of seq){
+    h.push(G.dk.pop());
+    render(false);
+    await sleep(270);
+  }
+
   G.phase='player';
-  setBadge('DEALING...');
-
-  // Use 6-deck shoe, reshuffle if low
-  if(G.dk.length < 52){
-    G.dk=[];
-    for(let i=0;i<6;i++)G.dk.push(...mkDeck());
-    shuf(G.dk);
-  }
-
-  // Deal: P, D, P, D
-  const deal_seq=[
-    {to:'p'},{to:'d'},{to:'p'},{to:'d'}
-  ];
-  for(const s of deal_seq){
-    const c=G.dk.pop();
-    if(s.to==='p')G.ph.push(c);
-    else G.dh.push(c);
-    renderAll(false);
-    await sleep(260);
-  }
-
   setBadge('YOUR TURN');
-  const pv=handValue(G.ph);
-  const dealerUp=G.dh[1].r; // face-up card
 
-  // Check insurance
-  if(dealerUp==='A'){
-    disAll();
-    setBadge('INSURANCE?');
-    setGuide('⚠️ ディーラーのオープンカードがA！インシュランス（保険）を掛けますか？','賭け金の半額でディーラーBJに対する保険が買えます');
-    setActions(false,false,false,false,false,true);
+  if(G.dh[1].r==='A'){
+    lockAll();setBadge('INSURANCE?');
+    setGuide('\u26a0\ufe0f \u30c7\u30a3\u30fc\u30e9\u30fc\u306eA\uff01\u30a4\u30f3\u30b7\u30e5\u30e9\u30f3\u30b9\u3092\u639b\u3051\u307e\u3059\u304b\uff1f','BET\u306e\u534a\u984d\u3067BJ\u4fdd\u967a\u304c\u8cb7\u3048\u307e\u3059');
+    showActions(false,false,false,false,false,true);
     return;
   }
-
   startPlayerTurn();
 }
 
 function startPlayerTurn(){
-  const pv=handValue(G.ph);
-  const dealerUp=G.dh[1].r;
-
-  // Blackjack?
-  if(isBlackjack(G.ph)){
-    setBadge('BLACKJACK! ⭐');
-    setGuide('⭐ ブラックジャック！最強の手です！','ディーラーのカードを確認します...');
-    setS('⭐ ブラックジャック！');
-    setTimeout(()=>dealerTurn(),800);
+  const pv=hv(G.ph);
+  const du=G.dh[1].r;
+  if(isBJ(G.ph)){
+    setBadge('BLACKJACK! \u2b50');
+    setGuide('\u2b50 \u30d6\u30e9\u30c3\u30af\u30b8\u30e3\u30c3\u30af\uff01\u6700\u5f37\u306e\u624b\uff01','\u30c7\u30a3\u30fc\u30e9\u30fc\u306e\u30ab\u30fc\u30c9\u3092\u78ba\u8a8d\u3057\u307e\u3059...');
+    setS('\u2b50 \u30d6\u30e9\u30c3\u30af\u30b8\u30e3\u30c3\u30af\uff01');
+    setTimeout(()=>runDealer(),900);
     return;
   }
-
-  // Can double?
-  const canDouble = G.ph.length===2 && G.chips-G.bet>=1;
-  // Can split?
-  const canSplit  = G.ph.length===2 &&
-    cardHardVal(G.ph[0].r)===cardHardVal(G.ph[1].r) &&
-    G.chips-G.bet>=G.bet;
-
-  const upLabel=dealerUp==='A'?'A':['10','J','Q','K'].includes(dealerUp)?'10':dealerUp;
-  const hint=pv<=11?`合計${pv}、積極的にHitを！`:pv<=16?`合計${pv}、ディーラー次第でStand or Hit`:
-    `合計${pv}、安全圏！Standが無難`;
-  setGuide(`🃏 あなた:${pv} vs ディーラー:${upLabel}　${hint}`,'');
-  setActions(true, true, canDouble, canSplit, false, false);
+  const canDbl=G.ph.length===2&&G.chips>=1;
+  const canSpl=G.ph.length===2&&cardHV(G.ph[0].r)===cardHV(G.ph[1].r)&&G.chips>=G.bet;
+  const upLabel=['10','J','Q','K'].includes(du)?'10':du;
+  const hint=pv<=11?'\u5408\u8a08'+pv+'\u3001Hit\u3067\u653b\u3081\u3088\u3046\uff01':pv<=16?'\u5408\u8a08'+pv+'\u3001\u30c7\u30a3\u30fc\u30e9\u30fc\u6b21\u7b2c\u3067Stand or Hit':'\u5408\u8a08'+pv+'\u3001Stand\u63a8\u5968';
+  setGuide('\uD83C\uDCCF \u3042\u306a\u305f:'+pv+' vs \u30c7\u30a3\u30fc\u30e9\u30fc:'+upLabel+'\u3000'+hint,'');
+  showActions(true,true,canDbl,canSpl,false,false);
 }
 
 // ── Player actions ──
 async function doHit(){
   if(G.phase!=='player')return;
-  if(G.splitActive)return doSplitHit();
-  disAll();
-  const c=G.dk.pop();G.ph.push(c);
-  renderAll(false);
-  await sleep(200);
-  const pv=handValue(G.ph);
-  if(pv>21){
-    setBadge('BUST 💥');
-    setGuide('💥 バースト！合計が21を超えてしまいました。','次回は21を超えないように注意');
-    setS('💥 バースト！負けです...','lose');
-    G.phase='result';
-    endHand('dealer');
-    return;
+  if(G.splitOn){await splitHit();return;}
+  lockAll();
+  G.ph.push(G.dk.pop());render(false);await sleep(220);
+  const v=hv(G.ph);
+  if(v>21){
+    setBadge('BUST \uD83D\uDCA5');
+    setGuide('\uD83D\uDCA5 \u30d0\u30fc\u30b9\u30c8\uff0121\u3092\u8d85\u3048\u307e\u3057\u305f\u3002','');
+    setS('\uD83D\uDCA5 \u30d0\u30fc\u30b9\u30c8...','lose');
+    G.phase='over';endHand('lose');return;
   }
-  if(pv===21){
-    setGuide('🎯 合計21！これ以上引けません。','Standして結果を待ちましょう');
-    await sleep(300);doStand();return;
-  }
+  if(v===21){lockAll();await sleep(300);await doStand();return;}
   startPlayerTurn();
 }
-
 async function doStand(){
   if(G.phase!=='player')return;
-  if(G.splitActive){doSplitStand();return;}
-  disAll();
-  setGuide('⏳ ディーラーのターン...','');
-  await sleep(300);
-  await dealerTurn();
+  if(G.splitOn){await splitStand();return;}
+  lockAll();setGuide('\u23f3 \u30c7\u30a3\u30fc\u30e9\u30fc\u306e\u30bf\u30fc\u30f3...','');await sleep(300);await runDealer();
 }
-
 async function doDouble(){
-  if(G.phase!=='player')return;
-  disAll();
-  const extra=Math.min(G.bet, G.chips); // 手持ちチップから追加
-  G.chips-=extra; // 追加分をここで引く
-  G.bet+=extra; G.doubled=true;
-  $('bet-disp').textContent=G.bet;
-  $('chips-disp').textContent=G.chips;
-  const c=G.dk.pop();G.ph.push(c);
-  renderAll(false);
-  setGuide(`💰 ダブルダウン！ベット合計${G.bet}。1枚引いて終了。`,'');
-  await sleep(400);
-  const pv=handValue(G.ph);
-  if(pv>21){
-    setBadge('BUST 💥');setS('💥 バースト（ダブル後）...','lose');
-    G.phase='result';endHand('dealer');return;
-  }
-  await dealerTurn();
+  if(G.phase!=='player')return;lockAll();
+  const extra=Math.min(G.bet,G.chips);
+  G.chips-=extra;G.bet+=extra;
+  render(false);setGuide('\uD83D\uDCB0 \u30c0\u30d6\u30eb\u30c0\u30a6\u30f3\uff01BET\u5408\u8a08'+G.bet+'\u30021\u679a\u5f15\u3044\u3066\u7d42\u4e86\u3002','');
+  G.ph.push(G.dk.pop());render(false);await sleep(420);
+  const v=hv(G.ph);
+  if(v>21){setBadge('BUST \uD83D\uDCA5');setS('\uD83D\uDCA5 \u30d0\u30fc\u30b9\u30c8\uff08\u30c0\u30d6\u30eb\u5f8c\uff09...','lose');G.phase='over';endHand('lose');return;}
+  await runDealer();
 }
-
 async function doSplit(){
-  if(G.phase!=='player')return;
-  disAll();
-  // Move cards to split hands
-  G.splitHands[0]=[G.ph[0]];G.splitHands[1]=[G.ph[1]];
-  G.bet*=2; // double bet for split
-  G.ph=[];G.splitActive=true;G.splitIdx=0;
-  $('split-row').style.display='flex';
-  $('player-hand-area').style.display='none';
-  // Deal one card to each
-  G.splitHands[0].push(G.dk.pop());
-  G.splitHands[1].push(G.dk.pop());
-  renderAll(false);renderSplit();
-  setGuide('✂️ スプリット！左の手からプレイします。','Hit または Stand を選んでください');
-  await sleep(300);
-  setSplitActions();
+  if(G.phase!=='player')return;lockAll();
+  G.sp[0]=[G.ph[0]];G.sp[1]=[G.ph[1]];
+  G.chips-=G.bet;G.bet*=2;
+  G.ph=[];G.splitOn=true;G.spIdx=0;
+  $('split-row').style.display='flex';$('player-hand-area').style.display='none';
+  G.sp[0].push(G.dk.pop());G.sp[1].push(G.dk.pop());
+  render(false);
+  setGuide('\u2702\ufe0f \u30b9\u30d7\u30ea\u30c3\u30c8\uff01\u5de6\u306e\u624b\u304b\u3089\u30d7\u30ec\u30a4\u3002','Hit \u307e\u305f\u306f Stand \u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044');
+  await sleep(300);activateSplit();
 }
-
-function setSplitActions(){
-  const hand=G.splitHands[G.splitIdx];
-  const v=handValue(hand);
-  const canDouble=hand.length===2&&G.chips-G.bet>=G.bet/2;
-  if(v===21){setTimeout(()=>doSplitStand(),400);return;}
-  setGuide(`✂️ 手${G.splitIdx+1}の合計: ${v}。Hit か Stand を選んでください。`,'');
-  setActions(true,true,false,false,false,false);
+function activateSplit(){
+  const v=hv(G.sp[G.spIdx]);render(false);
+  if(v>=21){setTimeout(()=>splitStand(),380);return;}
+  setGuide('\u2702\ufe0f \u624b'+(G.spIdx+1)+'\u306e\u5408\u8a08: '+v+'\u3002Hit \u304b Stand\u3002','');
+  showActions(true,true,false,false,false,false);
 }
-
-async function doSplitHit(){
-  disAll();
-  const c=G.dk.pop();
-  G.splitHands[G.splitIdx].push(c);
-  renderSplit();
-  await sleep(200);
-  const v=handValue(G.splitHands[G.splitIdx]);
-  if(v>=21){setTimeout(()=>doSplitStand(),300);return;}
-  setSplitActions();
+async function splitHit(){
+  lockAll();G.sp[G.spIdx].push(G.dk.pop());render(false);await sleep(220);
+  const v=hv(G.sp[G.spIdx]);
+  if(v>=21){setTimeout(()=>splitStand(),350);return;}
+  activateSplit();
 }
-
-async function doSplitStand(){
-  disAll();
-  if(G.splitIdx===0){
-    G.splitIdx=1;
-    renderSplit();
-    setGuide('✂️ 次は右の手をプレイ！','');
-    await sleep(350);
-    setSplitActions();
-  }else{
-    await dealerTurn(true);
-  }
+async function splitStand(){
+  lockAll();
+  if(G.spIdx===0){G.spIdx=1;render(false);setGuide('\u2702\ufe0f \u6b21\u306f\u53f3\u306e\u624b\uff01','');await sleep(350);activateSplit();}
+  else{await runDealer(true);}
 }
 
 // ── Insurance ──
 function doInsurance(){
-  G.sideBet=Math.floor(G.bet/2);
-  G.insured=true;
+  const ins=Math.floor(G.bet/2);
+  G.chips-=ins;G._ins=ins;
   $('btn-row2').style.display='none';
-  setGuide(`🛡 インシュランス！${G.sideBet}チップ追加。`,'' );
+  setGuide('\uD83D\uDEE1 \u30a4\u30f3\u30b7\u30e5\u30e9\u30f3\u30b9 '+ins+'\u30c1\u30c3\u30d7\u8ffd\u52a0\u3002','');
+  $('chips-disp').textContent=G.chips;
   startPlayerTurn();
 }
 function declineInsurance(){
-  $('btn-row2').style.display='none';
-  setGuide('インシュランスなし。','');
-  startPlayerTurn();
+  G._ins=0;$('btn-row2').style.display='none';
+  setGuide('\u30a4\u30f3\u30b7\u30e5\u30e9\u30f3\u30b9\u306a\u3057\u3002','');startPlayerTurn();
 }
 
-// ── Dealer turn ──
-async function dealerTurn(isSplit){
-  G.phase='dealer';disAll();
-  setBadge("DEALER'S TURN");
-  // Flip hidden card
-  renderAll(true);
-  await sleep(500);
-  const dv0=handValue(G.dh);
-
-  // Check dealer BJ vs player BJ / insurance
-  if(isBlackjack(G.dh)){
-    // Insurance pay
-    if(G.insured){
-      G.chips+=G.sideBet*3; // return sideBet*3 (sideBet was deducted? no - not deducted yet)
-      // Actually insurance bet: we reserve chips when placing. Let's just add net.
-    }
-    if(!isSplit && isBlackjack(G.ph)){
-      endHand('push');
-    }else{
-      endHand('dealer');
-    }
+// ── Dealer ──
+async function runDealer(isSplit){
+  G.phase='dealer';lockAll();setBadge("DEALER'S TURN");
+  render(true);await sleep(520);
+  if(isBJ(G.dh)&&G._ins){G.chips+=G._ins*3;}
+  G._ins=0;
+  if(isBJ(G.dh)){
+    if(!isSplit&&isBJ(G.ph)){endHand('push');}else{endHand('lose');}
     return;
   }
-  // Insurance loss (already noted, no chips deducted in this implementation - sideBet is just lost)
-
-  // Dealer draws to 17+
-  while(handValue(G.dh)<17){
-    const c=G.dk.pop();G.dh.push(c);
-    renderAll(true);
-    await sleep(450);
-  }
-
-  if(!isSplit){
-    resolveNormal();
-  }else{
-    resolveSplit();
-  }
+  while(hv(G.dh)<17){G.dh.push(G.dk.pop());render(true);await sleep(460);}
+  isSplit?resolveSplit():resolveNormal();
 }
-
 function resolveNormal(){
-  const pv=handValue(G.ph);const dv=handValue(G.dh);
-  if(pv>21){endHand('dealer');return;}
-  if(dv>21){endHand('player');return;}
-  if(isBlackjack(G.ph)&&!isBlackjack(G.dh)){endHand('bj');return;}
-  if(pv>dv)endHand('player');
-  else if(dv>pv)endHand('dealer');
-  else endHand('push');
+  const pv=hv(G.ph),dv=hv(G.dh);
+  if(pv>21){endHand('lose');return;}
+  if(dv>21){endHand('win');return;}
+  if(isBJ(G.ph)&&!isBJ(G.dh)){endHand('bj');return;}
+  if(pv>dv)endHand('win');else if(dv>pv)endHand('lose');else endHand('push');
 }
-
 function resolveSplit(){
-  // deal()時にG.bet（スプリット後の合計=片手×2）はすでにchipsから引かれている
-  const dv=handValue(G.dh);
-  const betEach=G.bet/2;
-  let returned=0;
+  const dv=hv(G.dh),betEach=G.bet/2;
+  let back=0;
   for(let i=0;i<2;i++){
-    const pv=handValue(G.splitHands[i]);
+    const pv=hv(G.sp[i]);
     if(pv<=21){
-      if(dv>21||pv>dv) returned+=betEach*2; // 勝ち: 掛金×2返却
-      else if(pv===dv)  returned+=betEach;   // push: 掛金返却
-      // 負け: 0
+      if(dv>21||pv>dv)back+=betEach*2;
+      else if(pv===dv)back+=betEach;
     }
   }
-  const profit=returned-G.bet;
-  G.chips+=returned;
-  const s0=handValue(G.splitHands[0]); const s1=handValue(G.splitHands[1]);
+  const profit=back-G.bet;
+  G.chips+=back;
+  const s0=hv(G.sp[0]),s1=hv(G.sp[1]);
   if(profit>0){
-    setS(`✨ スプリット勝利！ +${profit} チップ獲得！`,'win');
-    setBadge('WIN! 🏆');
-    setGuide(`🏆 スプリット勝利 +${profit}！　${s0} / ${s1} vs ディーラー${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
-    $('last-win').textContent='🪙 +'+profit; $('last-win').className='iv win-val';
+    setS('\u2728 \u30b9\u30d7\u30ea\u30c3\u30c8\u52dd\u5229\uff01 +'+profit+' \u30c1\u30c3\u30d7\uff01','win');
+    setBadge('WIN! \uD83C\uDFC6');
+    setGuide('\uD83C\uDFC6 \u52dd\u3061\uff01'+s0+'/'+s1+' vs \u30c7\u30a3\u30fc\u30e9\u30fc'+(dv<=21?dv:'BUST'),'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('last-win').textContent='\uD83E\uDE99 +'+profit;$('last-win').className='iv win-val';
   }else if(profit===0){
-    setS('🤝 スプリット引き分け。チップ返却。','tie');
-    setBadge('PUSH 🤝');
-    setGuide(`🤝 スプリット引き分け。　${s0} / ${s1} vs ディーラー${dv}`,'チップを賭けてDEALで次へ！');
-    $('last-win').textContent='—'; $('last-win').className='iv';
+    setS('\uD83E\uDD1D \u30b9\u30d7\u30ea\u30c3\u30c8\u5f15\u304d\u5206\u3051\u3002\u30c1\u30c3\u30d7\u8fd4\u5374\u3002','tie');setBadge('PUSH \uD83E\uDD1D');
+    setGuide('\uD83E\uDD1D \u5f15\u304d\u5206\u3051\u3002'+s0+'/'+s1+' vs \u30c7\u30a3\u30fc\u30e9\u30fc'+dv,'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('last-win').textContent='\u2014';$('last-win').className='iv';
   }else{
-    setS(`💀 スプリット敗北。${-profit} チップ失いました。`,'lose');
-    setBadge('LOSE 💀');
-    setGuide(`💀 スプリット敗北。　${s0} / ${s1} vs ディーラー${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
-    $('last-win').textContent='—'; $('last-win').className='iv';
+    setS('\uD83D\uDC80 \u30b9\u30d7\u30ea\u30c3\u30c8\u6557\u5317\u3002'+(-profit)+' \u30c1\u30c3\u30d7\u5931\u3044\u307e\u3057\u305f\u3002','lose');setBadge('LOSE \uD83D\uDC80');
+    setGuide('\uD83D\uDC80 \u8ca0\u3051\u3002'+s0+'/'+s1+' vs \u30c7\u30a3\u30fc\u30e9\u30fc'+(dv<=21?dv:'BUST'),'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('last-win').textContent='\u2014';$('last-win').className='iv';
   }
-  G.lastWin=profit;
-  G.bet=0;
-  save();
-  $('chips-disp').textContent=G.chips;
-  $('bet-disp').textContent=0;
-  G.phase='idle';
-  setActions(false,false,false,false,true,false);
-  if(G.chips<=0){setGuide('💀 チップ切れ！↺でリセット。','');$('bdeal').disabled=true;}
+  finishRound();
 }
 
-function endHand(winner){
-  // deal()時点でG.chips -= G.bet済み。ここでは返却分だけ加算する。
-  // 勝ち: bet×2返却（bet+利益bet）, BJ: bet+floor(bet*1.5)返却, push: bet返却, 負け: 0
-  const pv=handValue(G.ph); const dv=handValue(G.dh);
-  let profit=0;
-  if(winner==='player'){
-    profit=G.bet; G.chips+=G.bet*2;
-    setS(`🏆 勝ち！ +${profit} チップ獲得！`,'win');
-    setBadge('WIN! 🏆');
-    setGuide(`🏆 勝ちました！　あなた: ${pv}　ディーラー: ${dv<=21?dv:'BUST'}`,'チップを賭けてDEALで次へ！');
-    $('player-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='🪙 +'+profit; $('last-win').className='iv win-val';
-  }else if(winner==='bj'){
-    profit=Math.floor(G.bet*1.5); G.chips+=G.bet+profit;
-    setS(`⭐ ブラックジャック！ +${profit} チップ獲得！`,'win');
-    setBadge('BLACKJACK! ⭐');
-    setGuide('⭐ ブラックジャック！1.5倍の特別配当！','チップを賭けてDEALで次へ！');
-    $('player-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='⭐ +'+profit; $('last-win').className='iv win-val';
-  }else if(winner==='push'){
-    profit=0; G.chips+=G.bet;
-    setS('🤝 引き分け（プッシュ）。チップ返却。','tie');
-    setBadge('PUSH 🤝');
-    setGuide(`🤝 プッシュ。あなた: ${pv}　ディーラー: ${dv}`,'チップを賭けてDEALで次へ！');
-    $('last-win').textContent='—'; $('last-win').className='iv';
+// ── End ──
+function endHand(result){
+  const pv=hv(G.ph),dv=hv(G.dh);
+  if(result==='win'){
+    const p=G.bet;G.chips+=G.bet*2;
+    setS('\uD83C\uDFC6 \u52dd\u3061\uff01 +'+p+' \u30c1\u30c3\u30d7\u7372\u5f97\uff01','win');setBadge('WIN! \uD83C\uDFC6');
+    setGuide('\uD83C\uDFC6 \u52dd\u3061\u307e\u3057\u305f\uff01\u3000\u3042\u306a\u305f:'+pv+'\u3000\u30c7\u30a3\u30fc\u30e9\u30fc:'+(dv<=21?dv:'BUST'),'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('player-cards').closest('.hand-area').classList.add('win-glow');
+    $('last-win').textContent='\uD83E\uDE99 +'+p;$('last-win').className='iv win-val';
+  }else if(result==='bj'){
+    const p=Math.floor(G.bet*1.5);G.chips+=G.bet+p;
+    setS('\u2B50 \u30d6\u30e9\u30c3\u30af\u30b8\u30e3\u30c3\u30af\uff01 +'+p+' \u30c1\u30c3\u30d7\uff01','win');setBadge('BLACKJACK! \u2B50');
+    setGuide('\u2B50 \u30d6\u30e9\u30c3\u30af\u30b8\u30e3\u30c3\u30af\uff011.5\u500d\u306e\u7279\u5225\u914d\u5f53\uff01','\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('player-cards').closest('.hand-area').classList.add('win-glow');
+    $('last-win').textContent='\u2B50 +'+p;$('last-win').className='iv win-val';
+  }else if(result==='push'){
+    G.chips+=G.bet;
+    setS('\uD83E\uDD1D \u5f15\u304d\u5206\u3051\uff08\u30d7\u30c3\u30b7\u30e5\uff09\u3002\u30c1\u30c3\u30d7\u8fd4\u5374\u3002','tie');setBadge('PUSH \uD83E\uDD1D');
+    setGuide('\uD83E\uDD1D \u30d7\u30c3\u30b7\u30e5\u3002\u3042\u306a\u305f:'+pv+'\u3000\u30c7\u30a3\u30fc\u30e9\u30fc:'+dv,'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('last-win').textContent='\u2014';$('last-win').className='iv';
   }else{
-    // 負け: チップはすでに引かれているので何も返さない
-    profit=-G.bet;
-    setS(`💀 負け。${G.bet} チップ失いました。`,'lose');
-    setBadge('LOSE 💀');
-    const reason=pv>21?'バースト':dv>21?'先にバースト':`ディーラー${dv} > あなた${pv}`;
-    setGuide(`💀 負け。${reason}`,'チップを賭けてDEALで次へ！');
-    $('dealer-cards').parentElement.classList.add('win-glow');
-    $('last-win').textContent='—'; $('last-win').className='iv';
+    setS('\uD83D\uDC80 \u8ca0\u3051\u3002'+G.bet+' \u30c1\u30c3\u30d7\u5931\u3044\u307e\u3057\u305f\u3002','lose');setBadge('LOSE \uD83D\uDC80');
+    const why=pv>21?'\u30d0\u30fc\u30b9\u30c8':dv>21?'\u5148\u306b\u30d0\u30fc\u30b9\u30c8':'\u30c7\u30a3\u30fc\u30e9\u30fc'+dv+' > \u3042\u306a\u305f'+pv;
+    setGuide('\uD83D\uDC80 \u8ca0\u3051\u3002'+why,'\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3067\u6b21\u3078\uff01');
+    $('dealer-cards').closest('.hand-area').classList.add('win-glow');
+    $('last-win').textContent='\u2014';$('last-win').className='iv';
   }
-  G.lastWin=profit;
-  G.bet=0;
-  save();
+  finishRound();
+}
+
+function finishRound(){
+  G.bet=0;save();
   $('chips-disp').textContent=G.chips;
   $('bet-disp').textContent=0;
   G.phase='idle';
-  setActions(false,false,false,false,true,false);
-  if(G.chips<=0){setGuide('💀 チップ切れ！↺ボタンでリセットできます。','');$('bdeal').disabled=true;}
+  showActions(false,false,false,false,true,false);
+  if(G.chips<=0){setGuide('\uD83D\uDC80 \u30c1\u30c3\u30d7\u5207\u308c\uff01\u21ba\u3067\u30ea\u30bb\u30c3\u30c8\u3067\u304d\u307e\u3059\u3002','');setBtn('bdeal',false);}
 }
 
 // ── Reset ──
 function resetGame(){
-  if(!confirm('チップをリセットしますか？'))return;
+  if(!confirm('\u30c1\u30c3\u30d7\u3092\u30ea\u30bb\u30c3\u30c8\u3057\u307e\u3059\u304b\uff1f'))return;
   localStorage.removeItem('rblackjack');
-  G.chips=1000;G.bet=0;G.ph=[];G.dh=[];G.splitHands=[[],[]];
-  G.splitActive=false;G.phase='idle';G.doubled=false;G.insured=false;
+  G.dk=[];G.ph=[];G.dh=[];G.sp=[[],[]];G.chips=1000;G.bet=0;
+  G.phase='idle';G.splitOn=false;G.spIdx=0;G._ins=0;
   $('dealer-cards').innerHTML='';$('player-cards').innerHTML='';
-  $('dealer-cards').parentElement.classList.remove('win-glow');
-  $('player-cards').parentElement.classList.remove('win-glow');
+  const dA=$('dealer-cards').closest('.hand-area');
+  const pA=$('player-cards').closest('.hand-area');
+  if(dA)dA.classList.remove('win-glow');
+  if(pA)pA.classList.remove('win-glow');
   $('split-row').style.display='none';$('player-hand-area').style.display='flex';
-  $('dealer-score').textContent='—';$('dealer-score').className='hand-score';
-  $('player-score').textContent='—';$('player-score').className='hand-score';
-  $('last-win').textContent='—';$('last-win').className='iv';
-  $('chips-disp').textContent=G.chips;$('bet-disp').textContent=0;
+  $('dealer-score').textContent='\u2014';$('player-score').textContent='\u2014';
+  $('last-win').textContent='\u2014';$('last-win').className='iv';
+  $('chips-disp').textContent=1000;$('bet-disp').textContent=0;
   $('btn-row2').style.display='none';
   setBadge('WELCOME');setS('');
-  setActions(false,false,false,false,true,false);
-  setGuide('チップをリセットしました！','チップを賭けてDEALを押してください');
+  showActions(false,false,false,false,true,false);
+  setGuide('\u30c1\u30c3\u30d7\u3092\u30ea\u30bb\u30c3\u30c8\u3057\u307e\u3057\u305f\uff01','\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3092\u62bc\u3057\u3066\u304f\u3060\u3055\u3044');
 }
 
-// Init
-setActions(false,false,false,false,true,false);
+// ── Init ──
+$('chips-disp').textContent=G.chips;
+showActions(false,false,false,false,true,false);
+setGuide('\u30c1\u30c3\u30d7\u3092\u8ced\u3051\u3066DEAL\u3092\u62bc\u3057\u3066\u304f\u3060\u3055\u3044\uff01','21\u306b\u8fd1\u3065\u3051\u3066\u30c7\u30a3\u30fc\u30e9\u30fc\u3092\u5012\u305b\uff01');
 </script>
 </body>
 </html>
+
