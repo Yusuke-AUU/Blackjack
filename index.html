@@ -738,12 +738,23 @@ function endHand(result){
 }
 
 function finishRound(){
+  const lastBet=G.bet;
   G.bet=0;save();
   $('chips-disp').textContent=G.chips;
-  $('bet-disp').textContent=0;
   G.phase='idle';
   showActions(false,false,false,false,true,false);
-  if(G.chips<=0){setGuide('\uD83D\uDC80 \u30c1\u30c3\u30d7\u5207\u308c\uff01\u21ba\u3067\u30ea\u30bb\u30c3\u30c8\u3067\u304d\u307e\u3059\u3002','');setBtn('bdeal',false);}
+  if(G.chips<=0){
+    setGuide('\uD83D\uDC80 \u30c1\u30c3\u30d7\u5207\u308c\uff01\u21ba\u3067\u30ea\u30bb\u30c3\u30c8\u3067\u304d\u307e\u3059\u3002','');
+    setBtn('bdeal',false);
+    $('bet-disp').textContent=0;
+    return;
+  }
+  // 前回と同額を自動ベット（持ちチップ内で）
+  const autoBet=Math.min(lastBet||5, G.chips);
+  G.bet=autoBet;
+  $('bet-disp').textContent=G.bet;
+  setGuide('\uD83E\uDE99 \u524d\u56de\u3068\u540c\u984d '+G.bet+' \u30c1\u30c3\u30d7\u3092\u81ea\u52d5\u30d9\u30c3\u30c8\uff01',
+           'DEAL\u3067\u305d\u306e\u307e\u307e\u59cb\u3081\u308b\u304b\u3001\u30c1\u30c3\u30d7\u3092\u5909\u66f4\u3067\u304d\u307e\u3059');
 }
 
 // ── Reset ──
