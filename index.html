@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Royal Blackjack">
+<title>ROYAL BLACKJACK</title>
+<meta property="og:title" content="ROYAL BLACKJACK">
+<meta property="og:description" content="本格ブラックジャック。21に近づけてディーラーを倒せ！">
+<meta property="og:image" content="og-image.png">
+<meta property="og:type" content="website">
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Oswald:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --gold:#c9a84c; --gold-light:#f0d080; --gold-dark:#8b6914;
+  --cream:#f5f0e8; --red:#c0392b; --green:#0f3d1f; --green-light:#1a5c2e;
+}
+html,body { width:100%; height:100%; overflow:hidden;
+  background:radial-gradient(ellipse at center,#0a1f0e 0%,#050d06 100%);
+  font-family:'Oswald',sans-serif; color:var(--cream); user-select:none; }
+
+#app {
+  display:flex; flex-direction:column;
+  height:100dvh;
+  max-width:540px; margin:0 auto;
+  padding:10px 12px 12px; gap:6px;
+}
+
+/* Header */
+#header { text-align:center; flex-shrink:0; position:relative; }
+#header h1 {
+  font-family:'Playfair Display',serif; font-size:1.3rem; font-weight:900;
+  letter-spacing:0.2em;
+  background:linear-gradient(135deg,var(--gold-dark),var(--gold-light),var(--gold));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  filter:drop-shadow(0 1px 6px rgba(201,168,76,0.5));
+}
+.hline { height:1px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:2px auto; width:50%; }
+#help-btn {
+  position:absolute; right:0; top:50%; transform:translateY(-50%);
+  width:26px; height:26px; border-radius:50%;
+  background:rgba(201,168,76,0.15); border:1px solid rgba(201,168,76,0.5);
+  color:var(--gold); font-size:0.8rem; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all 0.15s;
+}
+#help-btn:hover { background:rgba(201,168,76,0.3); }
+#reset-btn {
+  position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:26px; height:26px; border-radius:50%;
+  background:rgba(201,168,76,0.1); border:1px solid rgba(201,168,76,0.3);
+  color:var(--gold); font-size:0.9rem; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:all 0.15s;
+}
+#reset-btn:hover { background:rgba(201,168,76,0.25); }
+
+/* Cards */
+.card {
+  width:50px; height:72px; border-radius:6px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-family:'Playfair Display',serif; position:relative; flex-shrink:0;
+  box-shadow:0 3px 10px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.1);
+  transition:transform 0.2s;
+}
+.card.fu { background:linear-gradient(145deg,#fefefe,#f0ece4); }
+.card.fd { background:linear-gradient(145deg,#1a2a5e,#0f1a40); border:1px solid rgba(201,168,76,0.3); }
+.card.fd::after { content:'♦'; font-size:1.6rem; color:rgba(201,168,76,0.25); }
+.card.red { color:var(--red); } .card.blk { color:#111; }
+.c-rank { font-size:0.95rem; font-weight:700; line-height:1; }
+.c-suit { font-size:0.8rem; line-height:1; }
+.c-tl { position:absolute; top:3px; left:5px; font-size:0.5rem; line-height:1.2; text-align:center; }
+.c-br { position:absolute; bottom:3px; right:5px; font-size:0.5rem; line-height:1.2; text-align:center; transform:rotate(180deg); }
+.card.deal-in { animation:dealIn 0.22s ease-out; }
+@keyframes dealIn { from{opacity:0;transform:scale(0.6) translateY(-8px);}to{opacity:1;transform:scale(1) translateY(0);} }
+.card.flip { animation:flipCard 0.3s ease; }
+@keyframes flipCard { 0%{transform:rotateY(90deg);}100%{transform:rotateY(0deg);} }
+
+/* Table */
+#table-area {
+  flex:1; min-height:0;
+  background:radial-gradient(ellipse at center,#245c3a 0%,#0f2d1c 100%);
+  border:2px solid rgba(201,168,76,0.3); border-radius:14px;
+  display:flex; flex-direction:column; align-items:center; justify-content:space-evenly;
+  padding:8px 10px; position:relative;
+  box-shadow:inset 0 2px 0 rgba(201,168,76,0.08),0 0 30px rgba(0,0,0,0.5);
+}
+#table-area::before {
+  content:''; position:absolute; inset:5px; border-radius:10px;
+  border:1px solid rgba(201,168,76,0.08); pointer-events:none;
+}
+
+.phase-badge {
+  font-size:0.55rem; letter-spacing:0.35em; color:var(--gold); opacity:0.7;
+  background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:20px;
+  border:1px solid rgba(201,168,76,0.2);
+}
+
+/* Hand areas */
+.hand-area {
+  width:100%; display:flex; align-items:center; justify-content:space-between;
+  padding:4px 6px;
+}
+.hand-info { min-width:68px; }
+.hand-label {
+  font-family:'Playfair Display',serif; font-size:0.85rem;
+  color:var(--gold); letter-spacing:0.08em;
+}
+.hand-sublabel { font-size:0.5rem; color:rgba(201,168,76,0.6); letter-spacing:0.2em; display:block; }
+.hand-cards { display:flex; gap:3px; flex-wrap:wrap; flex:1; justify-content:center; }
+.hand-score-wrap { min-width:44px; text-align:right; }
+.hand-score {
+  font-family:'Playfair Display',serif; font-size:1.7rem; font-weight:900;
+  color:var(--gold-light); line-height:1;
+  filter:drop-shadow(0 0 8px rgba(201,168,76,0.5));
+}
+.hand-score.bust { color:#ff6666; filter:drop-shadow(0 0 8px rgba(255,100,100,0.6)); }
+.hand-score.bj   { color:#7fff7f; filter:drop-shadow(0 0 8px rgba(127,255,127,0.6)); }
+.hand-score.good { color:#7fffff; }
+.score-label { font-size:0.48rem; color:rgba(201,168,76,0.6); letter-spacing:0.1em; display:block; }
+
+/* Split hands */
+#split-row {
+  display:none; width:100%; gap:6px;
+  justify-content:center; align-items:flex-start;
+}
+.split-hand {
+  flex:1; background:rgba(0,0,0,0.2); border-radius:8px;
+  padding:4px 6px; border:1px solid rgba(201,168,76,0.15);
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+}
+.split-hand.active-split { border-color:rgba(201,168,76,0.6); box-shadow:0 0 8px rgba(201,168,76,0.2); }
+.split-cards { display:flex; gap:3px; flex-wrap:wrap; justify-content:center; }
+.split-score { font-family:'Playfair Display',serif; font-size:1.2rem; font-weight:700; color:var(--gold-light); }
+
+/* Guide box */
+#guide-box {
+  width:100%; background:rgba(0,0,0,0.45); border-radius:8px;
+  border:1px solid rgba(201,168,76,0.15); padding:5px 10px; text-align:center;
+}
+#guide-situation { font-size:0.72rem; color:#cce8ff; line-height:1.4; }
+#guide-hint { font-size:0.65rem; color:rgba(201,168,76,0.7); margin-top:2px; font-style:italic; line-height:1.3; }
+
+#status-msg { font-size:0.8rem; font-style:italic; color:var(--cream); text-align:center; min-height:18px; letter-spacing:0.03em; }
+#status-msg.win{color:#7fff7f;} #status-msg.lose{color:#ff8888;} #status-msg.tie{color:var(--gold-light);}
+
+/* Bet panel */
+#bet-panel {
+  flex-shrink:0;
+  background:rgba(0,0,0,0.3); border:1px solid rgba(201,168,76,0.2);
+  border-radius:10px; padding:6px 10px;
+}
+.bet-label { font-size:0.52rem; letter-spacing:0.3em; color:var(--gold); opacity:0.7; margin-bottom:4px; text-align:center; }
+
+#chip-row { display:flex; gap:4px; align-items:center; margin-bottom:5px; }
+.chip-btn {
+  width:36px; height:36px; border-radius:50%; border:2px solid rgba(255,255,255,0.2);
+  font-family:'Oswald',sans-serif; font-weight:700; font-size:0.65rem;
+  cursor:pointer; transition:all 0.12s; flex-shrink:0;
+}
+.chip-btn:active { transform:scale(0.9); }
+.chip-btn:disabled { opacity:0.25; cursor:not-allowed; }
+#chip5   { background:radial-gradient(circle,#e53e3e,#c53030); color:#fff; }
+#chip25  { background:radial-gradient(circle,#38a169,#276749); color:#fff; }
+#chip100 { background:radial-gradient(circle,#3182ce,#2b6cb0); color:#fff; }
+#chip500 { background:radial-gradient(circle,#805ad5,#6b46c1); color:#fff; }
+#clear-bet { flex:1; background:rgba(255,80,80,0.15); border:1px solid rgba(255,80,80,0.3);
+  border-radius:6px; color:#ff9999; font-family:'Oswald',sans-serif; font-size:0.6rem;
+  letter-spacing:0.1em; cursor:pointer; padding:4px; transition:all 0.12s; }
+#clear-bet:active { transform:scale(0.97); }
+#clear-bet:disabled { opacity:0.2; cursor:not-allowed; }
+
+#info-row { display:flex; justify-content:space-between; font-size:0.62rem; color:var(--cream); opacity:0.8; }
+.iitem { text-align:center; }
+.iitem .iv { font-family:'Playfair Display',serif; font-size:0.95rem; color:var(--gold-light); font-weight:700; display:block; }
+.iitem .iv.win-val { color:#7fff7f; filter:drop-shadow(0 0 6px rgba(127,255,127,0.5)); }
+
+/* Action buttons */
+#action-area { flex-shrink:0; display:flex; flex-direction:column; gap:4px; }
+#btn-row { display:flex; gap:5px; }
+.btn {
+  flex:1; border:none; border-radius:8px;
+  font-family:'Oswald',sans-serif; font-size:0.68rem; font-weight:600;
+  letter-spacing:0.08em; cursor:pointer; transition:all 0.12s; text-transform:uppercase;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:8px 3px; gap:1px;
+}
+.btn-main { font-size:0.72rem; }
+.btn-sub { font-size:0.5rem; opacity:0.7; font-weight:300; letter-spacing:0.05em; }
+.btn:disabled { opacity:0.18; cursor:not-allowed; }
+.btn:active:not(:disabled) { transform:scale(0.96); }
+
+#bhit    { background:linear-gradient(135deg,#1a3a2a,#1e5c3a); color:#aaffcc; border:1px solid rgba(80,200,140,0.3); }
+#bstand  { background:linear-gradient(135deg,#3a1515,#5c2020); color:#ffaaaa; border:1px solid rgba(200,80,80,0.3); }
+#bdouble { background:linear-gradient(135deg,var(--gold-dark),var(--gold)); color:#0a0a0a; font-weight:700; border:1px solid var(--gold-light); }
+#bsplit  { background:linear-gradient(135deg,#1a2a3a,#1e3a5c); color:#aaccff; border:1px solid rgba(80,140,220,0.3); }
+#bdeal   { background:linear-gradient(135deg,#2a1a40,#4a2a70); color:var(--gold-light); border:1px solid rgba(180,140,220,0.4); flex:2; }
+#binsure { background:linear-gradient(135deg,#3a2a1a,#5c4020); color:#ffddaa; border:1px solid rgba(200,150,80,0.4); }
+
+/* Help modal */
+#help-modal {
+  display:none; position:fixed; inset:0; z-index:100;
+  background:rgba(0,0,0,0.85); align-items:center; justify-content:center;
+}
+#help-modal.open { display:flex; }
+#help-inner {
+  background:linear-gradient(160deg,#0a1f0e,#050d06);
+  border:1px solid rgba(201,168,76,0.4); border-radius:16px;
+  padding:18px 16px; max-width:460px; width:90%;
+  max-height:85vh; overflow-y:auto;
+}
+#help-inner h2 { font-family:'Playfair Display',serif; font-size:1.1rem; color:var(--gold); text-align:center; margin-bottom:12px; letter-spacing:0.15em; }
+.help-section { margin-bottom:12px; }
+.help-section h3 { font-size:0.7rem; letter-spacing:0.25em; color:var(--gold-light); border-bottom:1px solid rgba(201,168,76,0.2); padding-bottom:3px; margin-bottom:6px; }
+.help-item { margin-bottom:8px; }
+.help-term { font-size:0.75rem; font-weight:600; color:#aaddff; letter-spacing:0.1em; display:inline-block; margin-bottom:2px; }
+.help-desc { font-size:0.7rem; color:rgba(245,240,232,0.8); line-height:1.5; }
+.help-ex { font-size:0.65rem; color:rgba(201,168,76,0.65); margin-top:2px; font-style:italic; }
+#help-close {
+  display:block; margin:14px auto 0;
+  background:linear-gradient(135deg,var(--gold-dark),var(--gold));
+  color:#0a0a0a; font-family:'Oswald',sans-serif; font-weight:700;
+  font-size:0.8rem; letter-spacing:0.2em; border:none; border-radius:8px;
+  padding:10px 30px; cursor:pointer;
+}
+.basic-table { width:100%; border-collapse:collapse; font-size:0.62rem; margin-top:4px; }
+.basic-table th { color:var(--gold); padding:2px 4px; text-align:center; border-bottom:1px solid rgba(201,168,76,0.2); }
+.basic-table td { padding:2px 4px; text-align:center; color:rgba(245,240,232,0.8); }
+.basic-table tr:nth-child(even) td { background:rgba(255,255,255,0.03); }
+.td-h  { color:#aaffcc; } .td-s { color:#ffaaaa; } .td-d { color:#f0d080; } .td-sp { color:#aaccff; }
+
+/* Animations */
+@keyframes winGlow{0%,100%{box-shadow:0 0 0 2px var(--gold),0 0 15px rgba(201,168,76,0.3);}50%{box-shadow:0 0 0 3px var(--gold-light),0 0 30px rgba(201,168,76,0.7);}}
+.win-glow{animation:winGlow 0.8s ease infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+.thinking{animation:pulse 0.8s infinite;}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <h1>ROYAL BLACKJACK</h1>
+    <div class="hline"></div>
+    <button id="help-btn" onclick="openHelp()">？</button>
+    <button id="reset-btn" onclick="resetGame()" title="リセット">↺</button>
+  </div>
+
+  <!-- Table -->
+  <div id="table-area">
+    <div class="phase-badge" id="badge">WELCOME</div>
+
+    <!-- Dealer hand -->
+    <div class="hand-area">
+      <div class="hand-info">
+        <div class="hand-label">DEALER<span class="hand-sublabel">ディーラー</span></div>
+      </div>
+      <div class="hand-cards" id="dealer-cards"></div>
+      <div class="hand-score-wrap">
+        <span class="score-label">SCORE</span>
+        <div class="hand-score" id="dealer-score">—</div>
+      </div>
+    </div>
+
+    <!-- Guide -->
+    <div id="guide-box">
+      <div id="guide-situation">チップを賭けてDEALを押してください！</div>
+      <div id="guide-hint">21に近い方が勝ち。超えたらバースト（負け）</div>
+    </div>
+
+    <div id="status-msg"></div>
+
+    <!-- Split hands row (shown only during split) -->
+    <div id="split-row">
+      <div class="split-hand" id="split-hand-0">
+        <div class="split-cards" id="split-cards-0"></div>
+        <div class="split-score" id="split-score-0">0</div>
+      </div>
+      <div class="split-hand" id="split-hand-1">
+        <div class="split-cards" id="split-cards-1"></div>
+        <div class="split-score" id="split-score-1">0</div>
+      </div>
+    </div>
+
+    <!-- Player hand (hidden during split) -->
+    <div class="hand-area" id="player-hand-area">
+      <div class="hand-info">
+        <div class="hand-label">PLAYER<span class="hand-sublabel">あなた</span></div>
+      </div>
+      <div class="hand-cards" id="player-cards"></div>
+      <div class="hand-score-wrap">
+        <span class="score-label">SCORE</span>
+        <div class="hand-score" id="player-score">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bet panel -->
+  <div id="bet-panel">
+    <div class="bet-label">▸ BET ◂</div>
+    <div id="chip-row">
+      <button class="chip-btn" id="chip5"   onclick="addBet(5)">5</button>
+      <button class="chip-btn" id="chip25"  onclick="addBet(25)">25</button>
+      <button class="chip-btn" id="chip100" onclick="addBet(100)">100</button>
+      <button class="chip-btn" id="chip500" onclick="addBet(500)">500</button>
+      <button id="clear-bet" onclick="clearBet()">クリア</button>
+    </div>
+    <div id="info-row">
+      <div class="iitem">持ちチップ<span class="iv" id="chips-disp">1000</span></div>
+      <div class="iitem">現在のBET<span class="iv" id="bet-disp">0</span></div>
+      <div class="iitem">前回の獲得<span class="iv" id="last-win">—</span></div>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div id="action-area">
+    <div id="btn-row">
+      <button class="btn" id="bhit"    onclick="doHit()"    disabled><span class="btn-main">Hit</span><span class="btn-sub">1枚引く</span></button>
+      <button class="btn" id="bstand"  onclick="doStand()"  disabled><span class="btn-main">Stand</span><span class="btn-sub">引かない</span></button>
+      <button class="btn" id="bdouble" onclick="doDouble()" disabled><span class="btn-main">Double</span><span class="btn-sub">倍賭け+1枚</span></button>
+      <button class="btn" id="bsplit"  onclick="doSplit()"  disabled><span class="btn-main">Split</span><span class="btn-sub">2手に分ける</span></button>
+      <button class="btn" id="bdeal"   onclick="deal()"><span class="btn-main">DEAL</span><span class="btn-sub">カードを配る</span></button>
+    </div>
+    <div id="btn-row2" style="display:none;">
+      <button class="btn" id="binsure" onclick="doInsurance()"><span class="btn-main">Insurance</span><span class="btn-sub">保険を掛ける</span></button>
+      <button class="btn" id="bnoinsure" onclick="declineInsurance()" style="background:rgba(100,100,100,0.2);border:1px solid rgba(150,150,150,0.3);color:#ccc;"><span class="btn-main">No Ins.</span><span class="btn-sub">保険なし</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Help Modal -->
+<div id="help-modal">
+  <div id="help-inner">
+    <h2>📖 ブラックジャック ガイド</h2>
+    <div class="help-section">
+      <h3>🎯 ゲームの目的</h3>
+      <div class="help-desc">手札の合計を<b>21以下で</b>、<b>ディーラーより高く</b>することが目標。21を超えると「バースト（負け）」。ディーラーも同じルールで動きます。</div>
+    </div>
+    <div class="help-section">
+      <h3>🃏 カードの点数</h3>
+      <div class="help-desc" style="line-height:1.9;">
+        ・A（エース）→ <b>1 または 11</b>（有利な方を自動計算）<br>
+        ・2〜9 → そのままの数字<br>
+        ・10, J, Q, K → <b>10点</b>
+      </div>
+    </div>
+    <div class="help-section">
+      <h3>⭐ ブラックジャック（BJ）</h3>
+      <div class="help-desc">最初の2枚がA+10点札 → <b>ブラックジャック！</b><br>通常の勝ちより<b>1.5倍</b>の配当（掛け金×2.5倍返し）。ディーラーもBJなら引き分け。</div>
+    </div>
+    <div class="help-section">
+      <h3>🎮 アクションの意味</h3>
+      <div class="help-item"><div class="help-term">✅ Hit（ヒット）</div><div class="help-desc">カードを1枚追加。21を超えるとバースト（即負け）。</div></div>
+      <div class="help-item"><div class="help-term">🛑 Stand（スタンド）</div><div class="help-desc">カードを引かずに終了。ディーラーのターンへ。</div></div>
+      <div class="help-item"><div class="help-term">💰 Double Down（ダブル）</div><div class="help-desc">賭け金を2倍にして<b>カードを1枚だけ</b>引いて終了。最初の2枚のみ可能。チップ不足の場合は持ち分全額。</div><div class="help-ex">合計10や11のときが狙い目！</div></div>
+      <div class="help-item"><div class="help-term">✂️ Split（スプリット）</div><div class="help-desc">最初の2枚が同じ数字なら2つの手に分けてプレイ。追加ベット必要。</div><div class="help-ex">AのスプリットはBJ不成立（21として扱う）</div></div>
+      <div class="help-item"><div class="help-term">🛡 Insurance（インシュランス）</div><div class="help-desc">ディーラーの表向きカードがAの時だけ出現。ベットの半額でディーラーBJに備えた保険を掛けられる。</div></div>
+    </div>
+    <div class="help-section">
+      <h3>🤖 ディーラーのルール</h3>
+      <div class="help-desc">ディーラーは<b>17以上になるまで必ずカードを引く</b>（ソフト17もヒット）。プレイヤーのように自由には止まれません。</div>
+    </div>
+    <div class="help-section">
+      <h3>💰 配当一覧</h3>
+      <div class="help-desc" style="line-height:1.9;">
+        ・通常勝ち → 掛け金 × 2倍返し<br>
+        ・ブラックジャック勝ち → 掛け金 × 2.5倍返し<br>
+        ・引き分け（プッシュ） → 掛け金そのまま返却<br>
+        ・インシュランス的中 → 保険額 × 3倍返し
+      </div>
+    </div>
+    <div class="help-section">
+      <h3>📊 基本戦略の早見表（ベーシックストラテジー）</h3>
+      <div class="help-desc" style="margin-bottom:4px;">ディーラーの表向きカードを見て最適なアクションを取りましょう。</div>
+      <table class="basic-table">
+        <tr><th>自分の合計</th><th>ディーラー2〜6</th><th>ディーラー7〜A</th></tr>
+        <tr><td>8以下</td><td class="td-h">Hit</td><td class="td-h">Hit</td></tr>
+        <tr><td>9</td><td class="td-d">Double</td><td class="td-h">Hit</td></tr>
+        <tr><td>10〜11</td><td class="td-d">Double</td><td class="td-d">Double</td></tr>
+        <tr><td>12〜16</td><td class="td-s">Stand</td><td class="td-h">Hit</td></tr>
+        <tr><td>17以上</td><td class="td-s">Stand</td><td class="td-s">Stand</td></tr>
+      </table>
+      <div class="help-ex" style="margin-top:4px;">※ ソフトハンド（Aを11として使う場合）は戦略が異なります</div>
+    </div>
+    <div class="help-section">
+      <h3>💡 雄介さんへのアドバイス</h3>
+      <div class="help-desc" style="line-height:1.8;">
+        ・ディーラーが「6以下」なら自分は12以上でStandでOK（バースト狙い）<br>
+        ・合計10〜11はDoubleのチャンス！<br>
+        ・Aと8のペアは必ずSplitが定石<br>
+        ・5と10のペアはSplitしないほうが良い
+      </div>
+    </div>
+    <button id="help-close" onclick="closeHelp()">閉じる</button>
+  </div>
+</div>
+
+<script>
+const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SUITS=['♠','♥','♦','♣'];
+const $=id=>document.getElementById(id);
+
+function openHelp(){$('help-modal').classList.add('open');}
+function closeHelp(){$('help-modal').classList.remove('open');}
+$('help-modal').onclick=e=>{if(e.target===$('help-modal'))closeHelp();};
+
+// ── Card utils ──
+function mkDeck(){return SUITS.flatMap(s=>RANKS.map(r=>({r,s})));}
+function shuf(d){for(let i=d.length-1;i>0;i--){const j=0|Math.random()*(i+1);[d[i],d[j]]=[d[j],d[i]];}return d;}
+
+function cardHardVal(r){
+  if(r==='A')return 1;
+  if(['10','J','Q','K'].includes(r))return 10;
+  return parseInt(r);
+}
+function handValue(cards){
+  let total=0, aces=0;
+  for(const c of cards){
+    const v=cardHardVal(c.r);
+    total+=v;
+    if(c.r==='A')aces++;
+  }
+  while(aces>0 && total+10<=21){total+=10;aces--;}
+  return total;
+}
+function isSoft(cards){
+  // Has usable ace as 11
+  let total=0, aces=0;
+  for(const c of cards){total+=cardHardVal(c.r);if(c.r==='A')aces++;}
+  return aces>0 && total+10<=21;
+}
+function isBlackjack(cards){
+  return cards.length===2 && handValue(cards)===21;
+}
+
+function cardEl(c, fd){
+  const el=document.createElement('div');
+  el.className='card '+(fd?'fd':'fu')+' deal-in';
+  if(!fd){
+    const red=c.s==='♥'||c.s==='♦';
+    el.classList.add(red?'red':'blk');
+    el.innerHTML=`<div class="c-tl">${c.r}<br>${c.s}</div><div class="c-rank">${c.r}</div><div class="c-suit">${c.s}</div><div class="c-br">${c.r}<br>${c.s}</div>`;
+  }
+  return el;
+}
+
+// ── State ──
+function loadSave(){
+  try{const s=JSON.parse(localStorage.getItem('rblackjack'));if(s&&s.chips>0)return{chips:s.chips};}catch(e){}
+  return{chips:1000};
+}
+function save(){try{localStorage.setItem('rblackjack',JSON.stringify({chips:G.chips}));}catch(e){}}
+
+const saved=loadSave();
+let G={
+  dk:[],
+  ph:[],dh:[],          // player hand, dealer hand
+  splitHands:[[],[]],   // split hand 0 and 1
+  splitActive:false,
+  splitIdx:0,           // which split hand is active
+  chips:saved.chips,
+  bet:0,
+  sideBet:0,            // insurance
+  phase:'idle',         // idle, player, dealer, result
+  doubled:false,
+  insured:false,
+  lastWin:null,
+};
+
+function setS(m,c=''){$('status-msg').textContent=m;$('status-msg').className=c;}
+function setBadge(t){$('badge').textContent=t;}
+function setGuide(sit,hint){$('guide-situation').textContent=sit;$('guide-hint').textContent=hint;}
+
+// ── Render ──
+function renderCardRow(containerId, cards, hideFirst){
+  const cont=$(containerId);cont.innerHTML='';
+  cards.forEach((c,i)=>cont.appendChild(cardEl(c, hideFirst && i===0)));
+}
+
+function scoreClass(v, hand){
+  if(v>21)return 'bust';
+  if(isBlackjack(hand))return 'bj';
+  if(v>=18)return 'good';
+  return '';
+}
+
+function renderScores(revealDealer){
+  const pv=handValue(G.ph); const dv=handValue(G.dh);
+  const ps=$('player-score'); const ds=$('dealer-score');
+  if(G.ph.length===0){ps.textContent='—';ps.className='hand-score';}
+  else{ps.textContent=pv+(isSoft(G.ph)&&pv<=21?' ✦':'');ps.className='hand-score '+scoreClass(pv,G.ph);}
+  if(G.dh.length===0){ds.textContent='—';ds.className='hand-score';}
+  else if(!revealDealer && G.phase!=='dealer'&&G.phase!=='result'){
+    ds.textContent=cardHardVal(G.dh[1].r);ds.className='hand-score';
+  }else{ds.textContent=dv;ds.className='hand-score '+scoreClass(dv,G.dh);}
+}
+
+function renderSplit(){
+  for(let i=0;i<2;i++){
+    const cont=$('split-cards-'+i);cont.innerHTML='';
+    G.splitHands[i].forEach(c=>cont.appendChild(cardEl(c,false)));
+    const v=handValue(G.splitHands[i]);
+    const sc=$('split-score-'+i);
+    sc.textContent=v;
+    sc.style.color=v>21?'#ff6666':v===21?'#7fff7f':'';
+    $('split-hand-'+i).classList.toggle('active-split', i===G.splitIdx);
+  }
+}
+
+function renderAll(revealDealer){
+  renderCardRow('dealer-cards', G.dh, !revealDealer && G.phase!=='dealer'&&G.phase!=='result');
+  if(!G.splitActive)renderCardRow('player-cards', G.ph, false);
+  renderScores(revealDealer);
+  if(G.splitActive)renderSplit();
+  $('chips-disp').textContent=G.chips;
+  $('bet-disp').textContent=G.bet;
+}
+
+// ── Bet ──
+function addBet(amt){
+  if(G.phase!=='idle')return;
+  const add=Math.min(amt, G.chips-G.bet);
+  if(add<=0){setGuide('⚠️ チップが足りません！','持ちチップ以上は賭けられません');return;}
+  G.bet+=add;
+  $('bet-disp').textContent=G.bet;
+  setGuide(`🪙 ${G.bet} チップを賭け中`,'さらにチップを追加するかDEALを押してください');
+}
+function clearBet(){
+  if(G.phase!=='idle')return;
+  G.bet=0;$('bet-disp').textContent=0;
+  setGuide('賭けをクリアしました。','チップを選んでベットしましょう');
+}
+
+// ── Action buttons control ──
+function setActions(hit,stand,dbl,spl,deal,ins){
+  $('bhit').disabled=!hit;$('bstand').disabled=!stand;
+  $('bdouble').disabled=!dbl;$('bsplit').disabled=!spl;
+  $('bdeal').disabled=!deal;
+  $('btn-row2').style.display=ins?'flex':'none';
+}
+function disAll(){setActions(false,false,false,false,false,false);}
+
+// ── Deal ──
+async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function deal(){
+  if(G.phase!=='idle')return;
+  if(G.bet===0){setGuide('⚠️ 先にチップを賭けてください！','チップボタンを押してベット');return;}
+  if(G.chips<G.bet){G.bet=G.chips;} // safety
+
+  // Reset
+  G.ph=[];G.dh=[];G.splitHands=[[],[]];G.splitActive=false;G.splitIdx=0;
+  G.doubled=false;G.insured=false;G.sideBet=0;
+  $('dealer-cards').innerHTML='';$('player-cards').innerHTML='';
+  $('dealer-cards').parentElement.classList.remove('win-glow');
+  $('player-cards').parentElement.classList.remove('win-glow');
+  $('split-row').style.display='none';
+  $('player-hand-area').style.display='flex';
+  disAll();setS('');
+  G.phase='player';
+  setBadge('DEALING...');
+
+  // Use 6-deck shoe, reshuffle if low
+  if(G.dk.length < 52){
+    G.dk=[];
+    for(let i=0;i<6;i++)G.dk.push(...mkDeck());
+    shuf(G.dk);
+  }
+
+  // Deal: P, D, P, D
+  const deal_seq=[
+    {to:'p'},{to:'d'},{to:'p'},{to:'d'}
+  ];
+  for(const s of deal_seq){
+    const c=G.dk.pop();
+    if(s.to==='p')G.ph.push(c);
+    else G.dh.push(c);
+    renderAll(false);
+    await sleep(260);
+  }
+
+  setBadge('YOUR TURN');
+  const pv=handValue(G.ph);
+  const dealerUp=G.dh[1].r; // face-up card
+
+  // Check insurance
+  if(dealerUp==='A'){
+    disAll();
+    setBadge('INSURANCE?');
+    setGuide('⚠️ ディーラーのオープンカードがA！インシュランス（保険）を掛けますか？','賭け金の半額でディーラーBJに対する保険が買えます');
+    setActions(false,false,false,false,false,true);
+    return;
+  }
+
+  startPlayerTurn();
+}
+
+function startPlayerTurn(){
+  const pv=handValue(G.ph);
+  const dealerUp=G.dh[1].r;
+
+  // Blackjack?
+  if(isBlackjack(G.ph)){
+    setBadge('BLACKJACK! ⭐');
+    setGuide('⭐ ブラックジャック！最強の手です！','ディーラーのカードを確認します...');
+    setS('⭐ ブラックジャック！');
+    setTimeout(()=>dealerTurn(),800);
+    return;
+  }
+
+  // Can double?
+  const canDouble = G.ph.length===2 && G.chips-G.bet>=1;
+  // Can split?
+  const canSplit  = G.ph.length===2 &&
+    cardHardVal(G.ph[0].r)===cardHardVal(G.ph[1].r) &&
+    G.chips-G.bet>=G.bet;
+
+  const upLabel=dealerUp==='A'?'A':['10','J','Q','K'].includes(dealerUp)?'10':dealerUp;
+  const hint=pv<=11?`合計${pv}、積極的にHitを！`:pv<=16?`合計${pv}、ディーラー次第でStand or Hit`:
+    `合計${pv}、安全圏！Standが無難`;
+  setGuide(`🃏 あなた:${pv} vs ディーラー:${upLabel}　${hint}`,'');
+  setActions(true, true, canDouble, canSplit, false, false);
+}
+
+// ── Player actions ──
+async function doHit(){
+  if(G.phase!=='player')return;
+  if(G.splitActive)return doSplitHit();
+  disAll();
+  const c=G.dk.pop();G.ph.push(c);
+  renderAll(false);
+  await sleep(200);
+  const pv=handValue(G.ph);
+  if(pv>21){
+    setBadge('BUST 💥');
+    setGuide('💥 バースト！合計が21を超えてしまいました。','次回は21を超えないように注意');
+    setS('💥 バースト！負けです...','lose');
+    G.phase='result';
+    endHand('dealer');
+    return;
+  }
+  if(pv===21){
+    setGuide('🎯 合計21！これ以上引けません。','Standして結果を待ちましょう');
+    await sleep(300);doStand();return;
+  }
+  startPlayerTurn();
+}
+
+async function doStand(){
+  if(G.phase!=='player')return;
+  if(G.splitActive){doSplitStand();return;}
+  disAll();
+  setGuide('⏳ ディーラーのターン...','');
+  await sleep(300);
+  await dealerTurn();
+}
+
+async function doDouble(){
+  if(G.phase!=='player')return;
+  disAll();
+  const extra=Math.min(G.bet, G.chips-G.bet);
+  G.bet+=extra;G.doubled=true;
+  $('bet-disp').textContent=G.bet;
+  const c=G.dk.pop();G.ph.push(c);
+  renderAll(false);
+  setGuide(`💰 ダブルダウン！ベット合計${G.bet}。1枚引いて終了。`,'');
+  await sleep(400);
+  const pv=handValue(G.ph);
+  if(pv>21){
+    setBadge('BUST 💥');setS('💥 バースト（ダブル後）...','lose');
+    G.phase='result';endHand('dealer');return;
+  }
+  await dealerTurn();
+}
+
+async function doSplit(){
+  if(G.phase!=='player')return;
+  disAll();
+  // Move cards to split hands
+  G.splitHands[0]=[G.ph[0]];G.splitHands[1]=[G.ph[1]];
+  G.bet*=2; // double bet for split
+  G.ph=[];G.splitActive=true;G.splitIdx=0;
+  $('split-row').style.display='flex';
+  $('player-hand-area').style.display='none';
+  // Deal one card to each
+  G.splitHands[0].push(G.dk.pop());
+  G.splitHands[1].push(G.dk.pop());
+  renderAll(false);renderSplit();
+  setGuide('✂️ スプリット！左の手からプレイします。','Hit または Stand を選んでください');
+  await sleep(300);
+  setSplitActions();
+}
+
+function setSplitActions(){
+  const hand=G.splitHands[G.splitIdx];
+  const v=handValue(hand);
+  const canDouble=hand.length===2&&G.chips-G.bet>=G.bet/2;
+  if(v===21){setTimeout(()=>doSplitStand(),400);return;}
+  setGuide(`✂️ 手${G.splitIdx+1}の合計: ${v}。Hit か Stand を選んでください。`,'');
+  setActions(true,true,false,false,false,false);
+}
+
+async function doSplitHit(){
+  disAll();
+  const c=G.dk.pop();
+  G.splitHands[G.splitIdx].push(c);
+  renderSplit();
+  await sleep(200);
+  const v=handValue(G.splitHands[G.splitIdx]);
+  if(v>=21){setTimeout(()=>doSplitStand(),300);return;}
+  setSplitActions();
+}
+
+async function doSplitStand(){
+  disAll();
+  if(G.splitIdx===0){
+    G.splitIdx=1;
+    renderSplit();
+    setGuide('✂️ 次は右の手をプレイ！','');
+    await sleep(350);
+    setSplitActions();
+  }else{
+    await dealerTurn(true);
+  }
+}
+
+// ── Insurance ──
+function doInsurance(){
+  G.sideBet=Math.floor(G.bet/2);
+  G.insured=true;
+  $('btn-row2').style.display='none';
+  setGuide(`🛡 インシュランス！${G.sideBet}チップ追加。`,'' );
+  startPlayerTurn();
+}
+function declineInsurance(){
+  $('btn-row2').style.display='none';
+  setGuide('インシュランスなし。','');
+  startPlayerTurn();
+}
+
+// ── Dealer turn ──
+async function dealerTurn(isSplit){
+  G.phase='dealer';disAll();
+  setBadge("DEALER'S TURN");
+  // Flip hidden card
+  renderAll(true);
+  await sleep(500);
+  const dv0=handValue(G.dh);
+
+  // Check dealer BJ vs player BJ / insurance
+  if(isBlackjack(G.dh)){
+    // Insurance pay
+    if(G.insured){
+      G.chips+=G.sideBet*3; // return sideBet*3 (sideBet was deducted? no - not deducted yet)
+      // Actually insurance bet: we reserve chips when placing. Let's just add net.
+    }
+    if(!isSplit && isBlackjack(G.ph)){
+      endHand('push');
+    }else{
+      endHand('dealer');
+    }
+    return;
+  }
+  // Insurance loss (already noted, no chips deducted in this implementation - sideBet is just lost)
+
+  // Dealer draws to 17+
+  while(handValue(G.dh)<17){
+    const c=G.dk.pop();G.dh.push(c);
+    renderAll(true);
+    await sleep(450);
+  }
+
+  if(!isSplit){
+    resolveNormal();
+  }else{
+    resolveSplit();
+  }
+}
+
+function resolveNormal(){
+  const pv=handValue(G.ph);const dv=handValue(G.dh);
+  if(pv>21){endHand('dealer');return;}
+  if(dv>21){endHand('player');return;}
+  if(isBlackjack(G.ph)&&!isBlackjack(G.dh)){endHand('bj');return;}
+  if(pv>dv)endHand('player');
+  else if(dv>pv)endHand('dealer');
+  else endHand('push');
+}
+
+function resolveSplit(){
+  const dv=handValue(G.dh);
+  let net=0;
+  const betEach=G.bet/2;
+  for(let i=0;i<2;i++){
+    const pv=handValue(G.splitHands[i]);
+    if(pv>21){net-=betEach;}
+    else if(dv>21){net+=betEach;}
+    else if(pv>dv){net+=betEach;}
+    else if(dv>pv){net-=betEach;}
+    // push: net 0
+  }
+  G.phase='result';
+  const totalWin=G.bet+net; // G.bet/2 * each result
+  if(net>0){
+    G.chips+=G.bet+net;
+    G.lastWin=net;
+    setS(`✨ スプリット結果: +${net} 獲得！`,'win');
+    setGuide(`🏆 スプリット勝利！合計 +${net} チップ獲得。`,`あなた: ${handValue(G.splitHands[0])} / ${handValue(G.splitHands[1])}　ディーラー: ${dv}`);
+    setBadge('WIN! 🏆');
+    $('last-win').textContent='🪙 +'+net;$('last-win').className='iv win-val';
+  }else if(net===0){
+    G.chips+=G.bet;
+    setS('🤝 スプリット：引き分け（チップ返却）','tie');
+    setBadge('PUSH 🤝');
+    $('last-win').textContent='—';$('last-win').className='iv';
+    G.lastWin=0;
+  }else{
+    G.lastWin=net;
+    setS(`💀 スプリット敗北: ${net} チップ失いました。`,'lose');
+    setGuide(`💀 スプリット敗北。`,`あなた: ${handValue(G.splitHands[0])} / ${handValue(G.splitHands[1])}　ディーラー: ${dv}`);
+    setBadge('LOSE 💀');
+    $('last-win').textContent=net;$('last-win').className='iv';
+  }
+  save();
+  $('chips-disp').textContent=G.chips;
+  setActions(false,false,false,false,true,false);
+  if(G.chips<=0){setGuide('💀 チップ切れ！↺でリセット。','');$('bdeal').disabled=true;}
+  G.bet=0;$('bet-disp').textContent=0;
+}
+
+function endHand(winner){
+  G.phase='result';
+  const pv=handValue(G.ph);const dv=handValue(G.dh);
+  let win=0;
+  if(winner==='player'){
+    win=G.bet;G.chips+=G.bet*2;
+    setS(`🏆 勝ち！ +${G.bet} チップ獲得！`,'win');
+    setBadge('WIN! 🏆');
+    setGuide(`🏆 勝ちました！　あなた: ${pv}　ディーラー: ${dv<=21?dv:'BUST'}`,`NEW ROUNDで次へ！`);
+    $('player-cards').parentElement.classList.add('win-glow');
+    $('last-win').textContent='🪙 +'+G.bet;$('last-win').className='iv win-val';
+  }else if(winner==='bj'){
+    win=Math.floor(G.bet*1.5);G.chips+=G.bet+win;
+    setS(`⭐ ブラックジャック！ +${win} チップ獲得！`,'win');
+    setBadge('BLACKJACK! ⭐');
+    setGuide('⭐ ブラックジャック！1.5倍の特別配当です！','NEW ROUNDで次へ！');
+    $('player-cards').parentElement.classList.add('win-glow');
+    $('last-win').textContent='⭐ +'+win;$('last-win').className='iv win-val';
+  }else if(winner==='push'){
+    G.chips+=G.bet;
+    setS('🤝 引き分け（プッシュ）。チップ返却。','tie');
+    setBadge('PUSH 🤝');
+    setGuide(`🤝 プッシュ！引き分けです。　あなた: ${pv}　ディーラー: ${dv}`,'NEW ROUNDで次へ！');
+    $('last-win').textContent='—';$('last-win').className='iv';win=0;
+  }else{
+    setS(`💀 負け。${G.bet} チップ失いました。`,'lose');
+    setBadge('LOSE 💀');
+    const reason=pv>21?'バースト':dv>21?`ディーラーがバースト！でも…`:`ディーラー${dv} > あなた${pv}`;
+    setGuide(`💀 負け。${reason}`,'NEW ROUNDで次へ！');
+    $('dealer-cards').parentElement.classList.add('win-glow');
+    $('last-win').textContent='—';$('last-win').className='iv';win=-G.bet;
+  }
+  G.lastWin=win;
+  save();
+  $('chips-disp').textContent=G.chips;
+  setActions(false,false,false,false,true,false);
+  if(G.chips<=0){setGuide('💀 チップ切れ！↺ボタンでリセットできます。','');$('bdeal').disabled=true;}
+  G.bet=0;$('bet-disp').textContent=0;
+}
+
+// ── Reset ──
+function resetGame(){
+  if(!confirm('チップをリセットしますか？'))return;
+  localStorage.removeItem('rblackjack');
+  G.chips=1000;G.bet=0;G.ph=[];G.dh=[];G.splitHands=[[],[]];
+  G.splitActive=false;G.phase='idle';G.doubled=false;G.insured=false;
+  $('dealer-cards').innerHTML='';$('player-cards').innerHTML='';
+  $('dealer-cards').parentElement.classList.remove('win-glow');
+  $('player-cards').parentElement.classList.remove('win-glow');
+  $('split-row').style.display='none';$('player-hand-area').style.display='flex';
+  $('dealer-score').textContent='—';$('dealer-score').className='hand-score';
+  $('player-score').textContent='—';$('player-score').className='hand-score';
+  $('last-win').textContent='—';$('last-win').className='iv';
+  $('chips-disp').textContent=G.chips;$('bet-disp').textContent=0;
+  $('btn-row2').style.display='none';
+  setBadge('WELCOME');setS('');
+  setActions(false,false,false,false,true,false);
+  setGuide('チップをリセットしました！','チップを賭けてDEALを押してください');
+}
+
+// Init
+setActions(false,false,false,false,true,false);
+</script>
+</body>
+</html>
